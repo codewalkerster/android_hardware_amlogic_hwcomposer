@@ -49,7 +49,7 @@ LOCAL_CFLAGS += -DSINGLE_EXTERNAL_DISPLAY_USE_FB1
 endif
 endif
 
-LOCAL_MODULE := hwcomposer.amlogic
+LOCAL_MODULE := hwcomposer.$(TARGET_PRODUCT)
 LOCAL_CFLAGS += -DLOG_TAG=\"hwcomposer\"
 LOCAL_MODULE_TAGS := optional
 include $(BUILD_SHARED_LIBRARY)
