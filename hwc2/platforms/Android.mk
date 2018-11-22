@@ -140,7 +140,7 @@ LOCAL_SHARED_LIBRARIES += libamavutils_alsa
 #LOCAL_C_INCLUDES += $(AMAVUTILS_PATH)/include
 
 LOCAL_MODULE_TAGS := optional
-LOCAL_MODULE := hwcomposer.amlogic
+LOCAL_MODULE := hwcomposer.$(TARGET_PRODUCT)
 # LOCAL_CFLAGS += -DLINUX
 
 ifneq ($(TARGET_BUILD_VARIANT),user)
