@@ -189,6 +189,85 @@ auto PhysicalDevice::getSystemControlService() {
 }
 
 void PhysicalDevice::updateDisplayInfo(char defaultMode[64]) {
+#if defined(ODROIDN2)
+    if (!strncmp(defaultMode, "480x320", 7)) {
+        mDisplayWidth = 480;
+        mDisplayHeight = 320;
+    } else if (!strncmp(defaultMode, "640x480", 7)) {
+        mDisplayWidth = 640;
+        mDisplayHeight = 480;
+    } else if (!strncmp(defaultMode, "480", 3)) {
+        mDisplayWidth = 720;
+        mDisplayHeight = 480;
+    } else if (!strncmp(defaultMode, "800x480", 7)) {
+        mDisplayWidth = 800;
+        mDisplayHeight = 480;
+    } else if (!strncmp(defaultMode, "576", 3)) {
+        mDisplayWidth = 720;
+        mDisplayHeight = 576;
+    } else if (!strncmp(defaultMode, "800x600", 7)) {
+        mDisplayWidth = 800;
+        mDisplayHeight = 600;
+    } else if (!strncmp(defaultMode, "1024x600", 8)) {
+        mDisplayWidth = 1024;
+        mDisplayHeight = 600;
+    } else if (!strncmp(defaultMode, "1024x768", 8)) {
+        mDisplayWidth = 1024;
+        mDisplayHeight = 768;
+    } else if (!strncmp(defaultMode, "720", 3)) {
+        mDisplayWidth = 1280;
+        mDisplayHeight = 720;
+    } else if (!strncmp(defaultMode, "1280x800", 8)) {
+        mDisplayWidth = 1280;
+        mDisplayHeight = 800;
+    } else if (!strncmp(defaultMode, "1360x768", 8)) {
+        mDisplayWidth = 1360;
+        mDisplayHeight = 768;
+    } else if (!strncmp(defaultMode, "1366x768", 8)) {
+        mDisplayWidth = 1366;
+        mDisplayHeight = 768;
+    } else if (!strncmp(defaultMode, "1440x900", 8)) {
+        mDisplayWidth = 1440;
+        mDisplayHeight = 900;
+    } else if (!strncmp(defaultMode, "1280x1024", 9)) {
+        mDisplayWidth = 1280;
+        mDisplayHeight = 1024;
+    } else if (!strncmp(defaultMode, "1600x900", 8)) {
+        mDisplayWidth = 1600;
+        mDisplayHeight = 900;
+    } else if (!strncmp(defaultMode, "1680x1050", 9)) {
+        mDisplayWidth = 1680;
+        mDisplayHeight = 1050;
+    } else if (!strncmp(defaultMode, "1600x1200", 9)) {
+        mDisplayWidth = 1600;
+        mDisplayHeight = 1200;
+    } else if (!strncmp(defaultMode, "1080", 4)) {
+        mDisplayWidth = 1920;
+        mDisplayHeight = 1080;
+    } else if (!strncmp(defaultMode, "1920x1200", 9)) {
+        mDisplayWidth = 1920;
+        mDisplayHeight = 1200;
+    } else if (!strncmp(defaultMode, "2560x1080", 9)) {
+        mDisplayWidth = 2560;
+        mDisplayHeight = 1080;
+    } else if (!strncmp(defaultMode, "2560x1440", 9)) {
+        mDisplayWidth = 2560;
+        mDisplayHeight = 1440;
+    } else if (!strncmp(defaultMode, "2560x1600", 9)) {
+        mDisplayWidth = 2560;
+        mDisplayHeight = 1600;
+    } else if (!strncmp(defaultMode, "3440x1440", 9)) {
+        /* 3440x1440 - scaling with 21:9 ratio */
+        mDisplayWidth = 2560;
+        mDisplayHeight = 1080;
+    } else if (!strncmp(defaultMode, "2160", 4)) {
+        /* FIXME: real 4K framebuffer is too slow, so using 1080p
+         * fbset(3840, 2160, 32);
+         */
+        mDisplayWidth = 1920;
+        mDisplayHeight = 1080;
+    }
+#else
     if (!strncmp(defaultMode, "720", 3)) {
         mDisplayWidth= FULL_WIDTH_720;
         mDisplayHeight = FULL_HEIGHT_720;
@@ -199,6 +278,7 @@ void PhysicalDevice::updateDisplayInfo(char defaultMode[64]) {
         mDisplayWidth = FULL_WIDTH_4K2K;
         mDisplayHeight = FULL_HEIGHT_4K2K;
     }
+#endif
 }
 
 void PhysicalDevice::hdcpEventListener(void *data, bool status) {
@@ -975,8 +1055,12 @@ void PhysicalDevice::setOsdMouse()
 void PhysicalDevice::setOsdMouse(int x, int y, int w, int h, const char* cur_mode)
 {
     DTRACE("set osd mouse x:%d y:%d w:%d h:%d", x, y, w, h);
-    const char* displaySize = "1920 1080";
     int display_w, display_h;
+#if defined(ODROIDN2)
+    char displaySize[16];
+    sprintf(displaySize, "%d %d", mDisplayWidth, mDisplayHeight);
+#else
+    const char* displaySize = "1920 1080";
     if (!strncmp(mDefaultMode, "720", 3)) {
         displaySize = "1280 720";
     } else if (!strncmp(mDefaultMode, "1080", 4)) {
@@ -984,6 +1068,7 @@ void PhysicalDevice::setOsdMouse(int x, int y, int w, int h, const char* cur_mod
     } else if (!strncmp(mDefaultMode, "4k2k", 4)) {
         displaySize = "3840 2160";
     }
+#endif
 
     if (!strcmp(cur_mode, MODE_480I) || !strcmp(cur_mode, MODE_576I) ||
             !strcmp(cur_mode, MODE_480CVBS) || !strcmp(cur_mode, MODE_576CVBS) ||
