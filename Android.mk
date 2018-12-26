@@ -250,6 +250,6 @@ LOCAL_SRC_FILES := \
 LOCAL_SHARED_LIBRARIES += libamavutils_alsa
 
 LOCAL_MODULE_TAGS := optional
-LOCAL_MODULE := hwcomposer.amlogic
+LOCAL_MODULE := hwcomposer.$(TARGET_PRODUCT)
 
 include $(BUILD_SHARED_LIBRARY)
