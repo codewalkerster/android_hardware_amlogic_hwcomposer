@@ -42,10 +42,6 @@ LOCAL_SRC_FILES := \
 LOCAL_SRC_FILES += \
     PlatFactory.cpp
 
-ifeq ($(TARGET_PRODUCT), odroidn2)
-LOCAL_CFLAGS += -DODROIDN2
-endif
-
 LOCAL_SHARED_LIBRARIES := \
     libcutils \
     liblog \
