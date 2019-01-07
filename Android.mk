@@ -26,6 +26,10 @@ ifeq ($(TARGET_BUILD_VARIANT), user)
 LOCAL_CFLAGS += -DHWC_RELEASE=1
 endif
 
+ifeq ($(TARGET_BOARD_PLATFORM), odroidn2)
+LOCAL_CFLAGS += -DHWC_RELEASE=1
+endif
+
 #*********************************HWC CONFIGS************************
 #HWC API Version Config
 ifeq ($(USE_HWC1), true)
