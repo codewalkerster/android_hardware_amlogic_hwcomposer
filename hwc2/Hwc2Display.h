@@ -108,6 +108,7 @@ protected:
     hwc2_error_t collectCompositionRequest(
             uint32_t* outNumTypes, uint32_t* outNumRequests);
 
+    void updateDisplayInfo(const char defaultMode[64]);
     void loadDisplayResources();
     //void updateDisplayResources();
 

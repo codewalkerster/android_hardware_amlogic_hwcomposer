@@ -129,6 +129,9 @@ LOCAL_CFLAGS += -DHWC_ENABLE_DISPLAY_MODE_MANAGEMENT
 endif
 #*********************************HWC CONFIGS END************************
 
+ifeq ($(TARGET_PRODUCT), odroidn2)
+LOCAL_CFLAGS += -DODROIDN2
+endif
 
 LOCAL_C_INCLUDES := \
     $(LOCAL_PATH)/common/include/display \
@@ -149,7 +152,7 @@ LOCAL_C_INCLUDES += \
     hardware/amlogic/gralloc/amlogic \
     hardware/amlogic/gralloc \
     $(TOP)/hardware/amlogic/media/amavutils/include \
-    $(TOP)/vendor/amlogic/frameworks/services/systemcontrol
+    $(TOP)/vendor/amlogic/common/frameworks/services/systemcontrol
 
 LOCAL_COMMON_BASE_FILES := \
     common/base/DrmFramebuffer.cpp \

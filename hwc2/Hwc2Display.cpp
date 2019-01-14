@@ -22,6 +22,7 @@
 #include <CompositionStrategyFactory.h>
 #include <EventThread.h>
 #include <systemcontrol.h>
+#include <DisplayMode.h>
 
 Hwc2Display::Hwc2Display(hw_display_id dspId,
     std::shared_ptr<Hwc2DisplayObserver> observer) {
@@ -58,7 +59,14 @@ int32_t Hwc2Display::initialize() {
         MESON_LOGE("Init Hwc2Display with dummy display.");
      }
 
+#if defined(ODROIDN2)
+    std::string mode;
+    sc_get_display_mode(mode);
+    MESON_LOGI("Get hdmimode(%s) from systemcontrol service", mode.c_str());
+    updateDisplayInfo(mode.c_str());
+#else
     HwcConfig::getFramebufferSize (0, mFbWidth, mFbHeight);
+#endif
 
     /*get hw components.*/
     mModeMgr = createModeMgr(HwcConfig::getModePolicy());
@@ -87,6 +95,86 @@ int32_t Hwc2Display::initialize() {
 
     MESON_LOG_FUN_LEAVE();
     return 0;
+}
+
+void Hwc2Display::updateDisplayInfo(const char defaultMode[64]) {
+    if (!strncmp(defaultMode, "480x320", 7)) {
+        mFbWidth = 480;
+        mFbHeight = 320;
+    } else if (!strncmp(defaultMode, "640x480", 7)) {
+        mFbWidth = 640;
+        mFbHeight = 480;
+    } else if (!strncmp(defaultMode, "480", 3)) {
+        mFbWidth = 720;
+        mFbHeight = 480;
+    } else if (!strncmp(defaultMode, "800x480", 7)) {
+        mFbWidth = 800;
+        mFbHeight = 480;
+    } else if (!strncmp(defaultMode, "576", 3)) {
+        mFbWidth = 720;
+        mFbHeight = 576;
+    } else if (!strncmp(defaultMode, "800x600", 7)) {
+        mFbWidth = 800;
+        mFbHeight = 600;
+    } else if (!strncmp(defaultMode, "1024x600", 8)) {
+        mFbWidth = 1024;
+        mFbHeight = 600;
+    } else if (!strncmp(defaultMode, "1024x768", 8)) {
+        mFbWidth = 1024;
+        mFbHeight = 768;
+    } else if (!strncmp(defaultMode, "720", 3)) {
+        mFbWidth = 1280;
+        mFbHeight = 720;
+    } else if (!strncmp(defaultMode, "1280x800", 8)) {
+        mFbWidth = 1280;
+        mFbHeight = 800;
+    } else if (!strncmp(defaultMode, "1360x768", 8)) {
+        mFbWidth = 1360;
+        mFbHeight = 768;
+    } else if (!strncmp(defaultMode, "1366x768", 8)) {
+        mFbWidth = 1366;
+        mFbHeight = 768;
+    } else if (!strncmp(defaultMode, "1440x900", 8)) {
+        mFbWidth = 1440;
+        mFbHeight = 900;
+    } else if (!strncmp(defaultMode, "1280x1024", 9)) {
+        mFbWidth = 1280;
+        mFbHeight = 1024;
+    } else if (!strncmp(defaultMode, "1600x900", 8)) {
+        mFbWidth = 1600;
+        mFbHeight = 900;
+    } else if (!strncmp(defaultMode, "1680x1050", 9)) {
+        mFbWidth = 1680;
+        mFbHeight = 1050;
+    } else if (!strncmp(defaultMode, "1600x1200", 9)) {
+        mFbWidth = 1600;
+        mFbHeight = 1200;
+    } else if (!strncmp(defaultMode, "1080", 4)) {
+        mFbWidth = 1920;
+        mFbHeight = 1080;
+    } else if (!strncmp(defaultMode, "1920x1200", 9)) {
+        mFbWidth = 1920;
+        mFbHeight = 1200;
+    } else if (!strncmp(defaultMode, "2560x1080", 9)) {
+        mFbWidth = 2560;
+        mFbHeight = 1080;
+    } else if (!strncmp(defaultMode, "2560x1440", 9)) {
+        mFbWidth = 2560;
+        mFbHeight = 1440;
+    } else if (!strncmp(defaultMode, "2560x1600", 9)) {
+        mFbWidth = 2560;
+        mFbHeight = 1600;
+    } else if (!strncmp(defaultMode, "3440x1440", 9)) {
+        /* 3440x1440 - scaling with 21:9 ratio */
+        mFbWidth = 2560;
+        mFbHeight = 1080;
+    } else if (!strncmp(defaultMode, "2160", 4)) {
+        /* FIXME: real 4K framebuffer is too slow, so using 1080p
+         * fbset(3840, 2160, 32);
+         */
+        mFbWidth = 1920;
+        mFbHeight = 1080;
+    }
 }
 
 void Hwc2Display::loadDisplayResources() {
