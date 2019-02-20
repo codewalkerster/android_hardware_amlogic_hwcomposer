@@ -31,6 +31,7 @@ Hwc2Display::Hwc2Display(hw_display_id dspId,
     mForceClientComposer = false;
     mPowerMode  = std::make_shared<HwcPowerMode>();
     mSignalHpd = false;
+    mValidateDisplay = false;
     memset(&mHdrCaps, 0, sizeof(mHdrCaps));
     memset(mColorMatrix, 0, sizeof(float) * 16);
     memset(&mCalibrateCoordinates, 0, sizeof(int) * 4);
@@ -47,6 +48,7 @@ Hwc2Display::~Hwc2Display() {
     mConnector.reset();
     mObserver.reset();
     mCompositionStrategy.reset();
+    mPresentCompositionStg.reset();
 
     mModeMgr.reset();
 }
@@ -336,7 +338,6 @@ hwc2_error_t Hwc2Display::setCursorPosition(hwc2_layer_t layer __unused,
 hwc2_error_t Hwc2Display::setColorTransform(const float* matrix,
     android_color_transform_t hint) {
 
-    MESON_LOGV("msz color transform %d(%d)", hint, HAL_COLOR_TRANSFORM_IDENTITY);
     if (hint == HAL_COLOR_TRANSFORM_IDENTITY) {
         mForceClientComposer = false;
         memset(mColorMatrix, 0, sizeof(float) * 16);
@@ -432,6 +433,11 @@ hwc2_error_t Hwc2Display::collectComposersForPresent() {
         mPresentComposers.push_back(it->second);
     }
 
+    return HWC2_ERROR_NONE;
+}
+
+hwc2_error_t Hwc2Display::collectCompositionStgForPresent() {
+    mPresentCompositionStg = mCompositionStrategy;
     return HWC2_ERROR_NONE;
 }
 
@@ -532,6 +538,7 @@ hwc2_error_t Hwc2Display::validateDisplay(uint32_t* outNumTypes,
     mPresentLayers.clear();
     mPresentComposers.clear();
     mPresentPlanes.clear();
+    mPresentCompositionStg.reset();
     mChangedLayers.clear();
     mOverlayLayers.clear();
     mFailedDeviceComp = false;
@@ -546,6 +553,10 @@ hwc2_error_t Hwc2Display::validateDisplay(uint32_t* outNumTypes,
         return ret;
     }
     ret = collectPlanesForPresent();
+    if (ret != HWC2_ERROR_NONE) {
+        return ret;
+    }
+    ret = collectCompositionStgForPresent();
     if (ret != HWC2_ERROR_NONE) {
         return ret;
     }
@@ -584,15 +595,18 @@ hwc2_error_t Hwc2Display::validateDisplay(uint32_t* outNumTypes,
         if (mPresentLayers.size() > 0)
             adjustDisplayFrame();
         /*setup composition strategy.*/
-        mCompositionStrategy->setup(mPresentLayers,
+        mPresentCompositionStg->setup(mPresentLayers,
             mPresentComposers, mPresentPlanes, mCrtc, compositionFlags);
-        if (mCompositionStrategy->decideComposition() < 0) {
+        if (mPresentCompositionStg->decideComposition() < 0) {
             return HWC2_ERROR_NO_RESOURCES;
         }
 
         /*collect changed dispplay, layer, compostiion.*/
         ret = collectCompositionRequest(outNumTypes, outNumRequests);
     }
+
+    /* If mValidateDisplay = false, hwc will not handle presentDisplay. */
+    mValidateDisplay = true;
 
     /*dump at end of validate, for we need check by some composition info.*/
     bool dumpLayers = false;
@@ -697,9 +711,13 @@ hwc2_error_t Hwc2Display::presentDisplay(int32_t* outPresentFence) {
     if (mSkipComposition) {
         *outPresentFence = -1;
     } else {
+        if (mValidateDisplay == false) {
+            return HWC2_ERROR_NOT_VALIDATED;
+        }
+        mValidateDisplay = false;
         int32_t outFence = -1;
         /*Start to compose, set up plane info.*/
-        if (mCompositionStrategy->commit() != 0) {
+        if (mPresentCompositionStg->commit() != 0) {
             return HWC2_ERROR_NOT_VALIDATED;
         }
 
@@ -731,7 +749,7 @@ hwc2_error_t Hwc2Display::presentDisplay(int32_t* outPresentFence) {
     }
     if (dumpComposition) {
         String8 compDump;
-        mCompositionStrategy->dump(compDump);
+        mPresentCompositionStg->dump(compDump);
         MESON_LOGE("%s", compDump.string());
     }
     return HWC2_ERROR_NONE;
@@ -960,8 +978,10 @@ void Hwc2Display::dump(String8 & dumpstr) {
         dumpstr.append("\n");
 
         /* dump composition stragegy.*/
-        mCompositionStrategy->dump(dumpstr);
-        dumpstr.append("\n");
+        if (mPresentCompositionStg) {
+            mPresentCompositionStg->dump(dumpstr);
+            dumpstr.append("\n");
+        }
     }
 
     dumpstr.append("\n");
