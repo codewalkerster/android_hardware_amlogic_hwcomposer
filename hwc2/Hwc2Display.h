@@ -174,6 +174,7 @@ protected:
     std::vector<drm_hdr_meatadata_t> mHdrKeys;
 #endif
     std::mutex mMutex;
+    std::string mMode;
 };
 
 #endif/*HWC2_DISPLAY_H*/

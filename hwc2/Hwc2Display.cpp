@@ -60,10 +60,9 @@ int32_t Hwc2Display::initialize() {
      }
 
 #if defined(ODROIDN2)
-    std::string mode;
-    sc_get_display_mode(mode);
-    MESON_LOGI("Get hdmimode(%s) from systemcontrol service", mode.c_str());
-    updateDisplayInfo(mode.c_str());
+    sc_get_display_mode(mMode);
+    MESON_LOGE("Get hdmimode(%s) from systemcontrol service", mMode.c_str());
+    updateDisplayInfo(mMode.c_str());
 #else
     HwcConfig::getFramebufferSize (0, mFbWidth, mFbHeight);
 #endif
@@ -90,7 +89,9 @@ int32_t Hwc2Display::initialize() {
     loadDisplayResources();
     mCrtc->update();
     mModeMgr->update();
+#if !defined(ODROIDN2)
     if (mCrtc->getMode(mDisplayMode) == 0)
+#endif
         mPowerMode->setConnectorStatus(true);
 
     MESON_LOG_FUN_LEAVE();
@@ -512,9 +513,15 @@ int32_t Hwc2Display::loadCalibrateInfo() {
     }
 
     if (mDisplayMode.pixelW == 0 || mDisplayMode.pixelH == 0) {
+#if defined(ODROIDN2)
+        mDisplayMode.pixelW = configWidth;
+        mDisplayMode.pixelH = configHeight;
+        strcpy(mDisplayMode.name, mMode.c_str());
+#else
         MESON_ASSERT(0, "[%s]: Displaymode is invalid(%s, %dx%d)!",
                 __func__, mDisplayMode.name, mDisplayMode.pixelW, mDisplayMode.pixelH);
         return -ENOENT;
+#endif
     }
 
     /*default info*/
