@@ -928,10 +928,10 @@ void Hwc2Display::dumpPresentLayers(String8 & dumpstr) {
     dumpstr.append("|  id  |  z  |  type  |blend| alpha  |t|"
         "  AFBC  |    Source Crop    |    Display Frame  |\n");
     for (auto it = mPresentLayers.begin(); it != mPresentLayers.end(); it++) {
-        Hwc2Layer *layer = (Hwc2Layer*)(it->get());
+        //Hwc2Layer *layer = (Hwc2Layer*)(it->get());
         dumpstr.append("+------+-----+--------+-----+--------+-+--------+"
             "-------------------+-------------------+\n");
-        dumpstr.appendFormat("|%6llu|%5d|%8s|%5d|%8f|%1d|%8x|%4d %4d %4d %4d"
+        /*dumpstr.appendFormat("|%6llu|%5d|%8s|%5d|%8f|%1d|%8x|%4d %4d %4d %4d"
             "|%4d %4d %4d %4d|\n",
             layer->getUniqueId(),
             layer->mZorder,
@@ -948,7 +948,7 @@ void Hwc2Display::dumpPresentLayers(String8 & dumpstr) {
             layer->mDisplayFrame.top,
             layer->mDisplayFrame.right,
             layer->mDisplayFrame.bottom
-            );
+            );*/
     }
     dumpstr.append("----------------------------------------------------------"
         "-------------------------------\n");

@@ -57,8 +57,8 @@ void EventThread::sendEventDelayed(int what,  uint32_t delayMs) {
     nsecs_t delayTime = delayMs;
     delayTime = delayTime * 1000000;
 
-    MESON_LOGE("send event delayed %lld + %lld = %lld", now, delayTime,
-        now + delayTime);
+    //MESON_LOGE("send event delayed %lld + %lld = %lld", now, delayTime,
+      //  now + delayTime);
     mEvents.push_back({what,  now + delayTime});
     eventLock.unlock();
     mEventCond.notify_one();
@@ -104,7 +104,7 @@ void EventThread::processEvents() {
     nsecs_t now = systemTime(CLOCK_MONOTONIC);
     if (closestDueTime > now) {
         nsecs_t delayed = closestDueTime - now;
-        MESON_LOGE("get time %lld sleep %lld to wait", closestDueTime, delayed);
+        //MESON_LOGE("get time %lld sleep %lld to wait", closestDueTime, delayed);
         mEventCond.wait_for(eventLock,
             std::chrono::nanoseconds(delayed));
     } else  {
