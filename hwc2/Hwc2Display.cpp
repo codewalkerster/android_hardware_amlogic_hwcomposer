@@ -24,9 +24,7 @@
 #include <systemcontrol.h>
 #include <DisplayMode.h>
 
-Hwc2Display::Hwc2Display(hw_display_id dspId,
-    std::shared_ptr<Hwc2DisplayObserver> observer) {
-    mHwId = dspId;
+Hwc2Display::Hwc2Display(std::shared_ptr<Hwc2DisplayObserver> observer) {
     mObserver = observer;
     mForceClientComposer = false;
     mPowerMode  = std::make_shared<HwcPowerMode>();
@@ -38,8 +36,6 @@ Hwc2Display::Hwc2Display(hw_display_id dspId,
 }
 
 Hwc2Display::~Hwc2Display() {
-    HwDisplayManager::getInstance().unregisterObserver(mHwId);
-
     mLayers.clear();
     mPlanes.clear();
     mComposers.clear();
@@ -50,38 +46,25 @@ Hwc2Display::~Hwc2Display() {
     mCompositionStrategy.reset();
     mPresentCompositionStg.reset();
 
+    mVsync.reset();
     mModeMgr.reset();
+}
+
+int32_t Hwc2Display::setModeMgr(std::shared_ptr<HwcModeMgr> & mgr) {
+    MESON_LOG_FUN_ENTER();
+    std::lock_guard<std::mutex> lock(mMutex);
+    mModeMgr = mgr;
+
+    if (mModeMgr->getDisplayMode(mDisplayMode) == 0) {
+        mPowerMode->setConnectorStatus(true);
+    }
+    MESON_LOG_FUN_LEAVE();
+    return 0;
 }
 
 int32_t Hwc2Display::initialize() {
     MESON_LOG_FUN_ENTER();
     std::lock_guard<std::mutex> lock(mMutex);
-    if (MESON_DUMMY_DISPLAY_ID != mHwId) {
-        HwDisplayManager::getInstance().registerObserver(mHwId, this);
-     } else {
-        MESON_LOGE("Init Hwc2Display with dummy display.");
-     }
-
-#if defined(ODROID)
-    sc_get_display_mode(mMode);
-    MESON_LOGE("Get hdmimode(%s) from systemcontrol service", mMode.c_str());
-    int calibrateCoordinates[4];
-    std::string dispModeStr(mMode);
-    if (0 == sc_get_osd_position(dispModeStr, calibrateCoordinates)) {
-        mFbWidth = calibrateCoordinates[2];
-        mFbHeight = calibrateCoordinates[3];
-    }
-    if (mFbWidth >= 3840)
-        mFbWidth = 1920;
-    if (mFbHeight >= 2160)
-        mFbHeight = 1080;
-#else
-    HwcConfig::getFramebufferSize (0, mFbWidth, mFbHeight);
-#endif
-
-    /*get hw components.*/
-    mModeMgr = createModeMgr(HwcConfig::getModePolicy());
-    mModeMgr->setFramebufferSize(mFbWidth, mFbHeight);
 
     /*add valid composers*/
     std::shared_ptr<IComposer> composer;
@@ -97,33 +80,20 @@ int32_t Hwc2Display::initialize() {
 
     initLayerIdGenerator();
 
-    /*manual do display init, for we may missed some displayevents.*/
-    loadDisplayResources();
-    mCrtc->update();
-    mModeMgr->update();
-#if !defined(ODROID)
-    if (mCrtc->getMode(mDisplayMode) == 0)
-#endif
-        mPowerMode->setConnectorStatus(true);
-
     MESON_LOG_FUN_LEAVE();
     return 0;
 }
 
-void Hwc2Display::loadDisplayResources() {
+int32_t Hwc2Display::setDisplayResource(
+    std::shared_ptr<HwDisplayCrtc> & crtc,
+    std::shared_ptr<HwDisplayConnector> & connector,
+    std::vector<std::shared_ptr<HwDisplayPlane>> & planes) {
     MESON_LOG_FUN_ENTER();
-    if (MESON_DUMMY_DISPLAY_ID == mHwId)
-        return;
+    std::lock_guard<std::mutex> lock(mMutex);
 
-    HwDisplayManager::getInstance().getCrtc(mHwId, mCrtc);
-    HwDisplayManager::getInstance().getPlanes(mHwId, mPlanes);
-    HwDisplayManager::getInstance().getConnector(mHwId, mConnector);
-    mCrtc->loadProperities();
-    mModeMgr->setDisplayResources(mCrtc, mConnector);
-    mConnector->getHdrCapabilities(&mHdrCaps);
-#ifdef HWC_HDR_METADATA_SUPPORT
-    mCrtc->getHdrMetadataKeys(mHdrKeys);
-#endif
+    mCrtc = crtc;
+    mPlanes = planes;
+    mConnector = connector;
 
     /*update composition strategy.*/
     uint32_t strategyFlags = 0;
@@ -137,10 +107,24 @@ void Hwc2Display::loadDisplayResources() {
             }
         }
     }
-    mCompositionStrategy =
+    auto newCompositionStrategy =
         CompositionStrategyFactory::create(SIMPLE_STRATEGY, strategyFlags);
-    MESON_ASSERT(mCompositionStrategy, "Hwc2Display load composition strategy failed.");
+    if (newCompositionStrategy != mCompositionStrategy) {
+        MESON_LOGD("Update composition %s -> %s",
+            mCompositionStrategy != NULL ? mCompositionStrategy->getName() : "NULL",
+            newCompositionStrategy->getName());
+        mCompositionStrategy = newCompositionStrategy;
+    }
+
+    /*update display static info.*/
+    mCrtc->loadProperities();
+    mConnector->getHdrCapabilities(&mHdrCaps);
+#ifdef HWC_HDR_METADATA_SUPPORT
+    mCrtc->getHdrMetadataKeys(mHdrKeys);
+#endif
+
     MESON_LOG_FUN_LEAVE();
+    return 0;
 }
 
 #if 0
@@ -151,6 +135,11 @@ void Hwc2Display::updateDisplayResources() {
         mPowerMode->setConnectorStatus(true);
 }
 #endif
+int32_t Hwc2Display::setVsync(std::shared_ptr<HwcVsync> vsync) {
+    std::lock_guard<std::mutex> lock(mMutex);
+    mVsync = vsync;
+    return 0;
+}
 
 const char * Hwc2Display::getName() {
     return mConnector->getName();
@@ -195,14 +184,8 @@ hwc2_error_t Hwc2Display::setVsyncEnable(hwc2_vsync_t enabled) {
             MESON_LOGE("[%s]: set vsync state invalid %d.", __func__, enabled);
             return HWC2_ERROR_BAD_PARAMETER;
     }
-    HwDisplayManager::getInstance().enableVBlank(state);
+    mVsync->setEnabled(state);
     return HWC2_ERROR_NONE;
-}
-
-void Hwc2Display::onVsync(int64_t timestamp) {
-    if (mObserver != NULL) {
-        mObserver->onVsync(timestamp);
-    }
 }
 
 // HWC uses SystemControl for HDMI query / control purpose. Bacuase both parties
@@ -241,13 +224,25 @@ void Hwc2Display::onUpdate(bool bHdcp) {
     }
 }
 
+void Hwc2Display::onVsync(int64_t timestamp) {
+    if (mObserver != NULL) {
+        mObserver->onVsync(timestamp);
+    }
+}
+
 void Hwc2Display::onModeChanged(int stage) {
     std::lock_guard<std::mutex> lock(mMutex);
     MESON_LOGD("On mode change state: [%s]", stage == 1 ? "Complete" : "Begin to change");
     if (stage == 1) {
         if (mObserver != NULL) {
             if (mSignalHpd) {
-                loadDisplayResources();
+                mCrtc->loadProperities();
+                mModeMgr->setDisplayResources(mCrtc, mConnector);
+                mConnector->getHdrCapabilities(&mHdrCaps);
+#ifdef HWC_HDR_METADATA_SUPPORT
+                mCrtc->getHdrMetadataKeys(mHdrKeys);
+#endif
+
                 mCrtc->update();
                 if (mCrtc->getMode(mDisplayMode) == 0) {
                     mModeMgr->update();
@@ -266,8 +261,9 @@ void Hwc2Display::onModeChanged(int stage) {
                 }
             }
 
-            if (mCrtc->getMode(mDisplayMode) == 0)
+            if (mCrtc->getMode(mDisplayMode) == 0) {
                 mPowerMode->setConnectorStatus(true);
+            }
 
             /*last call refresh*/
             mObserver->refresh();
@@ -467,7 +463,9 @@ int32_t Hwc2Display::loadCalibrateInfo() {
 #if defined(ODROID)
         mDisplayMode.pixelW = configWidth;
         mDisplayMode.pixelH = configHeight;
-        strcpy(mDisplayMode.name, mMode.c_str());
+        std::string modeName;
+        sc_get_display_mode(modeName);
+        strcpy(mDisplayMode.name, modeName.c_str());
 #else
         MESON_ASSERT(0, "[%s]: Displaymode is invalid(%s, %dx%d)!",
                 __func__, mDisplayMode.name, mDisplayMode.pixelW, mDisplayMode.pixelH);
@@ -945,8 +943,8 @@ void Hwc2Display::dump(String8 & dumpstr) {
     /*dump*/
     dumpstr.append("---------------------------------------------------------"
         "-----------------------------\n");
-    dumpstr.appendFormat("Display %d (%s, %s) \n",
-        mHwId, getName(), mForceClientComposer ? "Client-Comp" : "HW-Comp");
+    dumpstr.appendFormat("Display (%s, %s) \n",
+        getName(), mForceClientComposer ? "Client-Comp" : "HW-Comp");
     dumpstr.appendFormat("Power: (%d-%d) \n",
         mPowerMode->getMode(), mPowerMode->getScreenStatus());
     /*calibration info*/
