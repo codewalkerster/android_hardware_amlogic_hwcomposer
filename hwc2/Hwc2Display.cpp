@@ -550,8 +550,10 @@ hwc2_error_t Hwc2Display::validateDisplay(uint32_t* outNumTypes,
     /*check power mode*/
     if (mPowerMode->needBlankScreen(mPresentLayers.size())) {
         if (!mPowerMode->getScreenStatus()) {
+#if !defined(ODROIDN2)
             MESON_LOGD("Need to blank screen.");
             mPresentLayers.clear();
+#endif
         } else {
             mSkipComposition = true;
         }
