@@ -62,7 +62,7 @@ int32_t Hwc2Display::initialize() {
         MESON_LOGE("Init Hwc2Display with dummy display.");
      }
 
-#if defined(ODROIDN2)
+#if defined(ODROID)
     sc_get_display_mode(mMode);
     MESON_LOGE("Get hdmimode(%s) from systemcontrol service", mMode.c_str());
     int calibrateCoordinates[4];
@@ -101,7 +101,7 @@ int32_t Hwc2Display::initialize() {
     loadDisplayResources();
     mCrtc->update();
     mModeMgr->update();
-#if !defined(ODROIDN2)
+#if !defined(ODROID)
     if (mCrtc->getMode(mDisplayMode) == 0)
 #endif
         mPowerMode->setConnectorStatus(true);
@@ -461,7 +461,7 @@ int32_t Hwc2Display::loadCalibrateInfo() {
     }
 
     if (mDisplayMode.pixelW == 0 || mDisplayMode.pixelH == 0) {
-#if defined(ODROIDN2)
+#if defined(ODROID)
         mDisplayMode.pixelW = configWidth;
         mDisplayMode.pixelH = configHeight;
         strcpy(mDisplayMode.name, mMode.c_str());
@@ -578,7 +578,7 @@ hwc2_error_t Hwc2Display::validateDisplay(uint32_t* outNumTypes,
     /*check power mode*/
     if (mPowerMode->needBlankScreen(mPresentLayers.size())) {
         if (!mPowerMode->getScreenStatus()) {
-#if !defined(ODROIDN2)
+#if !defined(ODROID)
             MESON_LOGD("Need to blank screen.");
             mPresentLayers.clear();
 #endif
