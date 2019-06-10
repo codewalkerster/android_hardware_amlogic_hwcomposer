@@ -26,7 +26,7 @@ ifeq ($(TARGET_BUILD_VARIANT), user)
 LOCAL_CFLAGS += -DHWC_RELEASE=1
 endif
 
-ifeq ($(TARGET_BOARD_PLATFORM), odroidn2)
+ifeq ($(PRODUCT_BRAND), ODROID)
 LOCAL_CFLAGS += -DHWC_RELEASE=1
 endif
 
@@ -129,8 +129,8 @@ LOCAL_CFLAGS += -DHWC_ENABLE_DISPLAY_MODE_MANAGEMENT
 endif
 #*********************************HWC CONFIGS END************************
 
-ifeq ($(TARGET_PRODUCT), odroidn2)
-LOCAL_CFLAGS += -DODROIDN2
+ifeq ($(PRODUCT_BRAND), ODROID)
+LOCAL_CFLAGS += -DODROID
 endif
 
 LOCAL_C_INCLUDES := \
