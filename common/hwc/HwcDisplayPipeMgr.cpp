@@ -55,6 +55,12 @@ HwcDisplayPipeMgr::HwcDisplayPipeMgr() {
          std::shared_ptr<HwcModeMgr> modeMgr =
              createModeMgr(HwcConfig::getModePolicy(i));
          modeMgr->setFramebufferSize(fbW, fbH);
+#if defined(ODROID)
+         if (fbW >= 3840)
+             fbW = 1920;
+         if (fbH >= 2160)
+             fbH = 1080;
+#endif
          stat->modeMgr = modeMgr;
          /*create vsync for display.*/
          stat->hwcVsync = std::make_shared<HwcVsync>();

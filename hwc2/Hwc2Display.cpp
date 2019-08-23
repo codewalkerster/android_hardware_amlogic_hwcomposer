@@ -22,7 +22,6 @@
 #include <CompositionStrategyFactory.h>
 #include <EventThread.h>
 #include <systemcontrol.h>
-#include <DisplayMode.h>
 
 Hwc2Display::Hwc2Display(std::shared_ptr<Hwc2DisplayObserver> observer) {
     mObserver = observer;
