@@ -112,6 +112,10 @@ ifeq ($(TARGET_APP_LAYER_USE_CONTINUOUS_BUFFER),false)
 LOCAL_CFLAGS += -DHWC_FORCE_CLIENT_COMPOSITION
 endif
 
+ifeq ($(PRODUCT_BRAND), ODROID)
+LOCAL_CFLAGS += -DODROID
+endif
+
 #*********************************HWC CONFIGS END************************
 
 LOCAL_SRC_FILES := \
