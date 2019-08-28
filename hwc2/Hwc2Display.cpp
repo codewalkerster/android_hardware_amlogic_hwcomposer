@@ -487,17 +487,9 @@ int32_t Hwc2Display::loadCalibrateInfo() {
     }
 
     if (mDisplayMode.pixelW == 0 || mDisplayMode.pixelH == 0) {
-#if defined(ODROID)
-        mDisplayMode.pixelW = configWidth;
-        mDisplayMode.pixelH = configHeight;
-        std::string modeName;
-        sc_get_display_mode(modeName);
-        strcpy(mDisplayMode.name, modeName.c_str());
-#else
         MESON_ASSERT(0, "[%s]: Displaymode is invalid(%s, %dx%d)!",
                 __func__, mDisplayMode.name, mDisplayMode.pixelW, mDisplayMode.pixelH);
         return -ENOENT;
-#endif
     }
 
     /*default info*/

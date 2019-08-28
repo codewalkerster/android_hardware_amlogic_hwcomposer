@@ -24,6 +24,7 @@ endif
 ifeq ($(PRODUCT_BRAND), ODROID)
 HWC_C_FLAGS += -DHWC_RELEASE=1
 endif
+
 #common hwc make configs.
 HWC_SHARED_LIBS := \
     libamgralloc_ext \
