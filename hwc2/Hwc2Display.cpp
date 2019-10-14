@@ -22,11 +22,8 @@
 #include <CompositionStrategyFactory.h>
 #include <EventThread.h>
 #include <systemcontrol.h>
-#include <DisplayMode.h>
 
-Hwc2Display::Hwc2Display(hw_display_id dspId,
-    std::shared_ptr<Hwc2DisplayObserver> observer) {
-    mHwId = dspId;
+Hwc2Display::Hwc2Display(std::shared_ptr<Hwc2DisplayObserver> observer) {
     mObserver = observer;
     mForceClientComposer = false;
     mPowerMode  = std::make_shared<HwcPowerMode>();
@@ -38,8 +35,6 @@ Hwc2Display::Hwc2Display(hw_display_id dspId,
 }
 
 Hwc2Display::~Hwc2Display() {
-    HwDisplayManager::getInstance().unregisterObserver(mHwId);
-
     mLayers.clear();
     mPlanes.clear();
     mComposers.clear();
@@ -50,38 +45,29 @@ Hwc2Display::~Hwc2Display() {
     mCompositionStrategy.reset();
     mPresentCompositionStg.reset();
 
+    mVsync.reset();
     mModeMgr.reset();
+
+    if (mPostProcessor != NULL)
+        mPostProcessor->stop();
+    mPostProcessor.reset();
+}
+
+int32_t Hwc2Display::setModeMgr(std::shared_ptr<HwcModeMgr> & mgr) {
+    MESON_LOG_FUN_ENTER();
+    std::lock_guard<std::mutex> lock(mMutex);
+    mModeMgr = mgr;
+
+    if (mModeMgr->getDisplayMode(mDisplayMode) == 0) {
+        mPowerMode->setConnectorStatus(true);
+    }
+    MESON_LOG_FUN_LEAVE();
+    return 0;
 }
 
 int32_t Hwc2Display::initialize() {
     MESON_LOG_FUN_ENTER();
     std::lock_guard<std::mutex> lock(mMutex);
-    if (MESON_DUMMY_DISPLAY_ID != mHwId) {
-        HwDisplayManager::getInstance().registerObserver(mHwId, this);
-     } else {
-        MESON_LOGE("Init Hwc2Display with dummy display.");
-     }
-
-#if defined(ODROID)
-    sc_get_display_mode(mMode);
-    MESON_LOGE("Get hdmimode(%s) from systemcontrol service", mMode.c_str());
-    int calibrateCoordinates[4];
-    std::string dispModeStr(mMode);
-    if (0 == sc_get_osd_position(dispModeStr, calibrateCoordinates)) {
-        mFbWidth = calibrateCoordinates[2];
-        mFbHeight = calibrateCoordinates[3];
-    }
-    if (mFbWidth >= 3840)
-        mFbWidth = 1920;
-    if (mFbHeight >= 2160)
-        mFbHeight = 1080;
-#else
-    HwcConfig::getFramebufferSize (0, mFbWidth, mFbHeight);
-#endif
-
-    /*get hw components.*/
-    mModeMgr = createModeMgr(HwcConfig::getModePolicy());
-    mModeMgr->setFramebufferSize(mFbWidth, mFbHeight);
 
     /*add valid composers*/
     std::shared_ptr<IComposer> composer;
@@ -97,33 +83,20 @@ int32_t Hwc2Display::initialize() {
 
     initLayerIdGenerator();
 
-    /*manual do display init, for we may missed some displayevents.*/
-    loadDisplayResources();
-    mCrtc->update();
-    mModeMgr->update();
-#if !defined(ODROID)
-    if (mCrtc->getMode(mDisplayMode) == 0)
-#endif
-        mPowerMode->setConnectorStatus(true);
-
     MESON_LOG_FUN_LEAVE();
     return 0;
 }
 
-void Hwc2Display::loadDisplayResources() {
+int32_t Hwc2Display::setDisplayResource(
+    std::shared_ptr<HwDisplayCrtc> & crtc,
+    std::shared_ptr<HwDisplayConnector> & connector,
+    std::vector<std::shared_ptr<HwDisplayPlane>> & planes) {
     MESON_LOG_FUN_ENTER();
-    if (MESON_DUMMY_DISPLAY_ID == mHwId)
-        return;
+    std::lock_guard<std::mutex> lock(mMutex);
 
-    HwDisplayManager::getInstance().getCrtc(mHwId, mCrtc);
-    HwDisplayManager::getInstance().getPlanes(mHwId, mPlanes);
-    HwDisplayManager::getInstance().getConnector(mHwId, mConnector);
-    mCrtc->loadProperities();
-    mModeMgr->setDisplayResources(mCrtc, mConnector);
-    mConnector->getHdrCapabilities(&mHdrCaps);
-#ifdef HWC_HDR_METADATA_SUPPORT
-    mCrtc->getHdrMetadataKeys(mHdrKeys);
-#endif
+    mCrtc = crtc;
+    mPlanes = planes;
+    mConnector = connector;
 
     /*update composition strategy.*/
     uint32_t strategyFlags = 0;
@@ -137,20 +110,37 @@ void Hwc2Display::loadDisplayResources() {
             }
         }
     }
-    mCompositionStrategy =
+    auto newCompositionStrategy =
         CompositionStrategyFactory::create(SIMPLE_STRATEGY, strategyFlags);
-    MESON_ASSERT(mCompositionStrategy, "Hwc2Display load composition strategy failed.");
+    if (newCompositionStrategy != mCompositionStrategy) {
+        MESON_LOGD("Update composition %s -> %s",
+            mCompositionStrategy != NULL ? mCompositionStrategy->getName() : "NULL",
+            newCompositionStrategy->getName());
+        mCompositionStrategy = newCompositionStrategy;
+    }
+
+    mConnector->getHdrCapabilities(&mHdrCaps);
+#ifdef HWC_HDR_METADATA_SUPPORT
+    mCrtc->getHdrMetadataKeys(mHdrKeys);
+#endif
+
     MESON_LOG_FUN_LEAVE();
+    return 0;
 }
 
-#if 0
-void Hwc2Display::updateDisplayResources() {
-    mCrtc->update();
-    mModeMgr->update();
-    if (mCrtc->getMode(mDisplayMode) == 0)
-        mPowerMode->setConnectorStatus(true);
+int32_t Hwc2Display::setPostProcessor(
+    std::shared_ptr<HwcPostProcessor> processor) {
+    std::lock_guard<std::mutex> lock(mMutex);
+    mPostProcessor = processor;
+    mProcessorFlags = 0;
+    return 0;
 }
-#endif
+
+int32_t Hwc2Display::setVsync(std::shared_ptr<HwcVsync> vsync) {
+    std::lock_guard<std::mutex> lock(mMutex);
+    mVsync = vsync;
+    return 0;
+}
 
 const char * Hwc2Display::getName() {
     return mConnector->getName();
@@ -167,6 +157,10 @@ const drm_hdr_capabilities_t * Hwc2Display::getHdrCapabilities() {
         mHdrCaps.minLuminance = sDefaultMinLumiance;
     }
     return &mHdrCaps;
+}
+
+void Hwc2Display::getDispMode(drm_mode_info_t & dispMode){
+    dispMode = mDisplayMode;
 }
 
 #ifdef HWC_HDR_METADATA_SUPPORT
@@ -195,14 +189,8 @@ hwc2_error_t Hwc2Display::setVsyncEnable(hwc2_vsync_t enabled) {
             MESON_LOGE("[%s]: set vsync state invalid %d.", __func__, enabled);
             return HWC2_ERROR_BAD_PARAMETER;
     }
-    HwDisplayManager::getInstance().enableVBlank(state);
+    mVsync->setEnabled(state);
     return HWC2_ERROR_NONE;
-}
-
-void Hwc2Display::onVsync(int64_t timestamp) {
-    if (mObserver != NULL) {
-        mObserver->onVsync(timestamp);
-    }
 }
 
 // HWC uses SystemControl for HDMI query / control purpose. Bacuase both parties
@@ -211,18 +199,24 @@ void Hwc2Display::onVsync(int64_t timestamp) {
 // shall wait for SystemControl before it can update its state and notify FWK
 // accordingly.
 void Hwc2Display::onHotplug(bool connected) {
-    std::lock_guard<std::mutex> lock(mMutex);
-    MESON_LOGD("On hot plug: [%s]", connected == true ? "Plug in" : "Plug out");
+    bool bSendPlugOut = false;
+    {
+        std::lock_guard<std::mutex> lock(mMutex);
+        MESON_LOGD("On hot plug: [%s]", connected == true ? "Plug in" : "Plug out");
 
-    if (connected) {
-        mSignalHpd = true;
-        return;
+        if (connected) {
+            mSignalHpd = true;
+            return;
+        }
+        mPowerMode->setConnectorStatus(false);
+        if (mObserver != NULL && mModeMgr->getPolicyType() != FIXED_SIZE_POLICY) {
+            bSendPlugOut = true;
+        }
     }
-    mPowerMode->setConnectorStatus(false);
 
-    if (mObserver != NULL && mModeMgr->getPolicyType() != FIXED_SIZE_POLICY) {
+    /*call hotplug out of lock, SF may call some hwc function to cause deadlock.*/
+    if (bSendPlugOut)
         mObserver->onHotplug(false);
-    }
 }
 
 void Hwc2Display::onUpdate(bool bHdcp) {
@@ -231,50 +225,59 @@ void Hwc2Display::onUpdate(bool bHdcp) {
 
     if (bHdcp) {
         if (mObserver != NULL) {
-            if (mCrtc != NULL) {
-                mCrtc->update();
-                mObserver->refresh();
-            }
+            mObserver->refresh();
         } else {
             MESON_LOGE("No display oberserve register to display (%s)", getName());
         }
     }
 }
 
+void Hwc2Display::onVsync(int64_t timestamp) {
+    if (mObserver != NULL) {
+        mObserver->onVsync(timestamp);
+    }
+}
+
 void Hwc2Display::onModeChanged(int stage) {
-    std::lock_guard<std::mutex> lock(mMutex);
-    MESON_LOGD("On mode change state: [%s]", stage == 1 ? "Complete" : "Begin to change");
-    if (stage == 1) {
-        if (mObserver != NULL) {
-            if (mSignalHpd) {
-                loadDisplayResources();
-                mCrtc->update();
-                if (mCrtc->getMode(mDisplayMode) == 0) {
-                    mModeMgr->update();
-                    mObserver->onHotplug(true);
-                    mSignalHpd = false;
+    bool bSendPlugIn = false;
+    {
+        std::lock_guard<std::mutex> lock(mMutex);
+        MESON_LOGD("On mode change state: [%s]", stage == 1 ? "Complete" : "Begin to change");
+        if (stage == 1) {
+            if (mObserver != NULL) {
+                /*plug in and set displaymode ok, update inforamtion.*/
+                if (mSignalHpd) {
+                    mConnector->getHdrCapabilities(&mHdrCaps);
+#ifdef HWC_HDR_METADATA_SUPPORT
+                    mCrtc->getHdrMetadataKeys(mHdrKeys);
+#endif
+                }
+
+                /*update mode success.*/
+                if (mModeMgr->getDisplayMode(mDisplayMode) == 0) {
+                    mPowerMode->setConnectorStatus(true);
+                    if (mSignalHpd) {
+                        bSendPlugIn = true;
+                        mSignalHpd = false;
+                    } else {
+                        /*Workaround: needed for NTS test.*/
+                        if (HwcConfig::primaryHotplugEnabled()
+                            && mModeMgr->getPolicyType() == FIXED_SIZE_POLICY) {
+                            bSendPlugIn = true;
+                        }
+                    }
                 }
             } else {
-                mCrtc->update();
-                mModeMgr->update();
-
-                /*Workaround: needed for NTS test.*/
-                if (HwcConfig::primaryHotplugEnabled()
-                    && mCrtc->getMode(mDisplayMode) == 0
-                    && mModeMgr->getPolicyType() == FIXED_SIZE_POLICY) {
-                    mObserver->onHotplug(true);
-                }
+                MESON_LOGE("No display oberserve register to display (%s)", getName());
             }
-
-            if (mCrtc->getMode(mDisplayMode) == 0)
-                mPowerMode->setConnectorStatus(true);
-
-            /*last call refresh*/
-            mObserver->refresh();
-        } else {
-            MESON_LOGE("No display oberserve register to display (%s)", getName());
         }
     }
+
+    /*call hotplug out of lock, SF may call some hwc function to cause deadlock.*/
+    if (bSendPlugIn)
+        mObserver->onHotplug(true);
+    /*last call refresh*/
+    mObserver->refresh();
 }
 
 /*
@@ -371,9 +374,22 @@ hwc2_error_t Hwc2Display::collectLayersForPresent() {
     */
     mPresentLayers.reserve(10);
 
+    /*Check if layer list is changed or not*/
+    bool bUpdateLayerList = false;
+    for (auto it = mLayers.begin(); it != mLayers.end(); it++) {
+        std::shared_ptr<Hwc2Layer> layer = it->second;
+        if (layer->isUpdateZorder() == true) {
+            bUpdateLayerList = true;
+            break;
+        }
+    }
+
     for (auto it = mLayers.begin(); it != mLayers.end(); it++) {
         std::shared_ptr<Hwc2Layer> layer = it->second;
         std::shared_ptr<DrmFramebuffer> buffer = layer;
+        if (bUpdateLayerList == true && layer->isUpdateZorder() == false) {
+            continue;
+        }
         mPresentLayers.push_back(buffer);
 
         if (isLayerHideForDebug(it->first)) {
@@ -441,6 +457,16 @@ hwc2_error_t Hwc2Display::collectCompositionStgForPresent() {
     return HWC2_ERROR_NONE;
 }
 
+hwc2_error_t Hwc2Display::setCalibrateInfo(int32_t caliX,int32_t caliY,int32_t caliW,int32_t caliH){
+
+    mCalibrateCoordinates[0] = caliX;
+    mCalibrateCoordinates[1] = caliY;
+    mCalibrateCoordinates[2] = caliW;
+    mCalibrateCoordinates[3] = caliH;
+
+    return HWC2_ERROR_NONE;
+}
+
 int32_t Hwc2Display::loadCalibrateInfo() {
     hwc2_config_t config;
     int32_t configWidth;
@@ -461,40 +487,19 @@ int32_t Hwc2Display::loadCalibrateInfo() {
     }
 
     if (mDisplayMode.pixelW == 0 || mDisplayMode.pixelH == 0) {
-#if defined(ODROID)
-        mDisplayMode.pixelW = configWidth;
-        mDisplayMode.pixelH = configHeight;
-        strcpy(mDisplayMode.name, mMode.c_str());
-#else
         MESON_ASSERT(0, "[%s]: Displaymode is invalid(%s, %dx%d)!",
                 __func__, mDisplayMode.name, mDisplayMode.pixelW, mDisplayMode.pixelH);
         return -ENOENT;
-#endif
     }
 
     /*default info*/
     mCalibrateInfo.framebuffer_w = configWidth;
     mCalibrateInfo.framebuffer_h = configHeight;
-    mCalibrateInfo.crtc_display_x = 0;
-    mCalibrateInfo.crtc_display_y = 0;
-    mCalibrateInfo.crtc_display_w = mDisplayMode.pixelW;
-    mCalibrateInfo.crtc_display_h = mDisplayMode.pixelH;
+    mCalibrateInfo.crtc_display_x = mCalibrateCoordinates[0];
+    mCalibrateInfo.crtc_display_y = mCalibrateCoordinates[1];
+    mCalibrateInfo.crtc_display_w = mCalibrateCoordinates[2];
+    mCalibrateInfo.crtc_display_h = mCalibrateCoordinates[3];
 
-    if (!HwcConfig::preDisplayCalibrateEnabled()) {
-        /*get post calibrate info.*/
-        /*for interlaced, we do thing, osd driver will take care of it.*/
-        int calibrateCoordinates[4];
-        std::string dispModeStr(mDisplayMode.name);
-        if (0 == sc_get_osd_position(dispModeStr, calibrateCoordinates)) {
-            memcpy(mCalibrateCoordinates, calibrateCoordinates, sizeof(int) * 4);
-        } else {
-            MESON_LOGD("(%s): sc_get_osd_position failed, use backup coordinates.", __func__);
-        }
-        mCalibrateInfo.crtc_display_x = mCalibrateCoordinates[0];
-        mCalibrateInfo.crtc_display_y = mCalibrateCoordinates[1];
-        mCalibrateInfo.crtc_display_w = mCalibrateCoordinates[2];
-        mCalibrateInfo.crtc_display_h = mCalibrateCoordinates[3];
-    }
     return 0;
 }
 
@@ -605,6 +610,10 @@ hwc2_error_t Hwc2Display::validateDisplay(uint32_t* outNumTypes,
         ret = collectCompositionRequest(outNumTypes, outNumRequests);
     }
 
+    if (mPowerMode->getScreenStatus()) {
+        mProcessorFlags |= PRESENT_BLANK;
+    }
+
     /* If mValidateDisplay = false, hwc will not handle presentDisplay. */
     mValidateDisplay = true;
 
@@ -643,6 +652,8 @@ hwc2_error_t Hwc2Display::collectCompositionRequest(
                 mFailedDeviceComp = true;
             }
         }
+        if (expectedHwcComposition == HWC2_COMPOSITION_SIDEBAND)
+            mProcessorFlags |= PRESENT_SIDEBAND;
     }
 
     /*collcet client clear layer.*/
@@ -697,9 +708,15 @@ hwc2_error_t Hwc2Display::getChangedCompositionTypes(
 
 hwc2_error_t Hwc2Display::acceptDisplayChanges() {
    /* commit composition type */
-    for (auto it = mPresentLayers.begin() ; it != mPresentLayers.end(); it++) {
+    for (auto it = mPresentLayers.begin(); it != mPresentLayers.end(); it++) {
         Hwc2Layer * layer = (Hwc2Layer*)(it->get());
         layer->commitCompType(mesonComp2Hwc2Comp(layer));
+    }
+
+    /* set updateZorder flag to false */
+    for (auto it = mLayers.begin(); it != mLayers.end(); it++) {
+        std::shared_ptr<Hwc2Layer> layer = it->second;
+        layer->updateZorder(false);
     }
 
     return HWC2_ERROR_NONE;
@@ -735,6 +752,12 @@ hwc2_error_t Hwc2Display::presentDisplay(int32_t* outPresentFence) {
         if (mCrtc->pageFlip(outFence) < 0) {
             return HWC2_ERROR_UNSUPPORTED;
         }
+        if (mPostProcessor != NULL) {
+            int32_t displayFence = ::dup(outFence);
+            mPostProcessor->present(mProcessorFlags, displayFence);
+            mProcessorFlags = 0;
+        }
+
         *outPresentFence = outFence;
     }
 
@@ -818,7 +841,7 @@ hwc2_error_t  Hwc2Display::getDisplayConfigs(
     uint32_t* outNumConfigs,
     hwc2_config_t* outConfigs) {
     if (mModeMgr != NULL) {
-        return mModeMgr->getDisplayConfigs(outNumConfigs, outConfigs);
+        return (hwc2_error_t)mModeMgr->getDisplayConfigs(outNumConfigs, outConfigs);
     } else {
         MESON_LOGE("Hwc2Display getDisplayConfigs (%s) miss valid DisplayConfigure.",
             getName());
@@ -831,7 +854,8 @@ hwc2_error_t  Hwc2Display::getDisplayAttribute(
     int32_t attribute,
     int32_t* outValue) {
     if (mModeMgr != NULL) {
-        return mModeMgr->getDisplayAttribute(config, attribute, outValue, CALL_FROM_SF);
+        return (hwc2_error_t)mModeMgr->getDisplayAttribute(
+            config, attribute, outValue, CALL_FROM_SF);
     } else {
         MESON_LOGE("Hwc2Display (%s) getDisplayAttribute miss valid DisplayConfigure.",
             getName());
@@ -842,7 +866,7 @@ hwc2_error_t  Hwc2Display::getDisplayAttribute(
 hwc2_error_t Hwc2Display::getActiveConfig(
     hwc2_config_t* outConfig) {
     if (mModeMgr != NULL) {
-        return mModeMgr->getActiveConfig(outConfig, CALL_FROM_SF);
+        return (hwc2_error_t)mModeMgr->getActiveConfig(outConfig, CALL_FROM_SF);
     } else {
         MESON_LOGE("Hwc2Display (%s) getActiveConfig miss valid DisplayConfigure.",
             getName());
@@ -853,7 +877,7 @@ hwc2_error_t Hwc2Display::getActiveConfig(
 hwc2_error_t Hwc2Display::setActiveConfig(
     hwc2_config_t config) {
     if (mModeMgr != NULL) {
-        return mModeMgr->setActiveConfig(config);
+        return (hwc2_error_t)mModeMgr->setActiveConfig(config);
     } else {
         MESON_LOGE("Display (%s) setActiveConfig miss valid DisplayConfigure.",
             getName());
@@ -896,10 +920,10 @@ void Hwc2Display::dumpPresentLayers(String8 & dumpstr) {
     dumpstr.append("|  id  |  z  |  type  |blend| alpha  |t|"
         "  AFBC  |    Source Crop    |    Display Frame  |\n");
     for (auto it = mPresentLayers.begin(); it != mPresentLayers.end(); it++) {
-        Hwc2Layer *layer = (Hwc2Layer*)(it->get());
+        //Hwc2Layer *layer = (Hwc2Layer*)(it->get());
         dumpstr.append("+------+-----+--------+-----+--------+-+--------+"
             "-------------------+-------------------+\n");
-        dumpstr.appendFormat("|%6llu|%5d|%8s|%5d|%8f|%1d|%8x|%4d %4d %4d %4d"
+        /*dumpstr.appendFormat("|%6llu|%5d|%8s|%5d|%8f|%1d|%8x|%4d %4d %4d %4d"
             "|%4d %4d %4d %4d|\n",
             layer->getUniqueId(),
             layer->mZorder,
@@ -916,7 +940,7 @@ void Hwc2Display::dumpPresentLayers(String8 & dumpstr) {
             layer->mDisplayFrame.top,
             layer->mDisplayFrame.right,
             layer->mDisplayFrame.bottom
-            );
+            );*/
     }
     dumpstr.append("----------------------------------------------------------"
         "-------------------------------\n");
@@ -935,8 +959,8 @@ void Hwc2Display::dump(String8 & dumpstr) {
     /*dump*/
     dumpstr.append("---------------------------------------------------------"
         "-----------------------------\n");
-    dumpstr.appendFormat("Display %d (%s, %s) \n",
-        mHwId, getName(), mForceClientComposer ? "Client-Comp" : "HW-Comp");
+    dumpstr.appendFormat("Display (%s, %s) \n",
+        getName(), mForceClientComposer ? "Client-Comp" : "HW-Comp");
     dumpstr.appendFormat("Power: (%d-%d) \n",
         mPowerMode->getMode(), mPowerMode->getScreenStatus());
     /*calibration info*/

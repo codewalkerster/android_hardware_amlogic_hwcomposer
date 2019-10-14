@@ -7,19 +7,26 @@
  * Description:
  */
 
+#include <unistd.h>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+
 #include <BasicTypes.h>
 #include <MesonLog.h>
 #include <DebugHelper.h>
-#include <unistd.h>
 #include <HwcConfig.h>
+#include <HwcVsync.h>
+#include <HwcDisplayPipeMgr.h>
+#include <misc.h>
+#include <systemcontrol.h>
 
 #include "MesonHwc2Defs.h"
 #include "MesonHwc2.h"
 #include "VirtualDisplay.h"
 
-#include <thread>
-#include <mutex>
-#include <condition_variable>
+#define GET_REQUEST_FROM_PROP 1
+
 
 #define CHECK_DISPLAY_VALID(display)    \
     if (isDisplayValid(display) == false) { \
@@ -48,7 +55,6 @@
         return HWC2_ERROR_BAD_LAYER; \
     }
 
-
 /************************************************************
 *                        Hal Interface
 ************************************************************/
@@ -61,11 +67,14 @@ void MesonHwc2::dump(uint32_t* outSize, char* outBuffer) {
     String8 dumpstr;
     DebugHelper::getInstance().resolveCmd();
 
-    dumpstr.append("\nMesonHwc2 state:\n");
+#ifdef HWC_RELEASE
+    dumpstr.append("\nMesonHwc2 state(RELEASE):\n");
+#else
+    dumpstr.append("\nMesonHwc2 state(DEBUG):\n");
+#endif
 
     if (DebugHelper::getInstance().dumpDetailInfo()) {
         HwcConfig::dump(dumpstr);
-        HwDisplayManager::getInstance().dump(dumpstr);
     }
 
     // dump composer status
@@ -121,6 +130,9 @@ int32_t MesonHwc2::registerCallback(int32_t descriptor,
         */
             if (mHotplugFn) {
                 mHotplugFn(mHotplugData, HWC_DISPLAY_PRIMARY, true);
+                if (HwcConfig::enableExtendDisplay() == true) {
+                    mHotplugFn(mHotplugData, HWC_DISPLAY_EXTERNAL, true);
+                }
             }
             break;
         case HWC2_CALLBACK_REFRESH:
@@ -346,6 +358,12 @@ int32_t MesonHwc2::getReleaseFences(hwc2_display_t display,
 int32_t MesonHwc2::validateDisplay(hwc2_display_t display,
     uint32_t* outNumTypes, uint32_t* outNumRequests) {
     GET_HWC_DISPLAY(display);
+    /*handle display request*/
+    uint32_t request = getDisplayRequest();
+    setCalibrateInfo(display);
+    if (request != 0)
+        handleDisplayRequest(request);
+
     return hwcDisplay->validateDisplay(outNumTypes,
         outNumRequests);
 }
@@ -483,10 +501,98 @@ int32_t MesonHwc2::getPerFrameMetadataKeys(
 }
 #endif
 
+/**********************Amlogic ext display interface*******************/
+int32_t MesonHwc2::setPostProcessor(bool bEnable) {
+    mDisplayRequests |= bEnable ? rPostProcessorStart : rPostProcessorStop;
+    return 0;
+}
+
+int32_t MesonHwc2::setCalibrateInfo(hwc2_display_t display){
+    GET_HWC_DISPLAY(display);
+    int32_t caliX,caliY,caliW,caliH;
+    static int cali[4];
+    drm_mode_info_t mDispMode;
+    hwcDisplay->getDispMode(mDispMode);
+    if (HwcConfig::getPipeline() == HWC_PIPE_VIU1VDINVIU2) {
+        caliX = 1;
+        caliY = 1;
+        caliW = mDispMode.pixelW - 2;
+        caliH = mDispMode.pixelH - 2;
+    } else {
+        /*default info*/
+        caliX = 0;
+        caliY = 0;
+        caliW = mDispMode.pixelW;
+        caliH = mDispMode.pixelH;
+        if (!HwcConfig::preDisplayCalibrateEnabled()) {
+            /*get post calibrate info.*/
+            /*for interlaced, we do thing, osd driver will take care of it.*/
+            int calibrateCoordinates[4];
+            std::string dispModeStr(mDispMode.name);
+            if (0 == sc_get_osd_position(dispModeStr, calibrateCoordinates)) {
+                memcpy(cali, calibrateCoordinates, sizeof(int) * 4);
+            } else {
+                MESON_LOGD("(%s): sc_get_osd_position failed, use backup coordinates.", __func__);
+            }
+            caliX = cali[0];
+            caliY = cali[1];
+            caliW = cali[2];
+            caliH = cali[3];
+        }
+    }
+    return hwcDisplay->setCalibrateInfo(caliX,caliY,caliW,caliH);
+}
+
+uint32_t MesonHwc2::getDisplayRequest() {
+    /*read extend prop to update display request.*/
+#ifdef GET_REQUEST_FROM_PROP
+    if (HwcConfig::getPipeline() == HWC_PIPE_VIU1VDINVIU2) {
+        static bool b3dMode = false;
+        static bool bKeystone = false;
+        char val[PROP_VALUE_LEN_MAX];
+        bool bVal = false;
+
+        /*get 3dmode status*/
+        bVal = !sys_get_bool_prop("vendor.hwc.postprocessor", true);
+        if (b3dMode != bVal) {
+            mDisplayRequests |= bVal ? rPostProcessorStop : rPostProcessorStart;
+            b3dMode = bVal;
+            if (b3dMode)
+                bKeystone = false;
+        }
+
+        if (!b3dMode) {
+            /*get keystone status*/
+            bVal = false;
+            if (sys_get_string_prop("persist.vendor.hwc.keystone", val) > 0 &&
+                strcmp(val, "0") != 0) {
+                bVal = true;
+            }
+            if (bKeystone != bVal) {
+                mDisplayRequests |= bVal ? rKeystoneEnable : rKeystoneDisable;
+                bKeystone = bVal;
+            }
+        }
+    }
+#endif
+    /*record and reset requests.*/
+    uint32_t request = mDisplayRequests;
+    mDisplayRequests = 0;
+    if (request > 0) {
+        MESON_LOGE("getDisplayRequest %x", request);
+    }
+    return request;
+}
+
+int32_t MesonHwc2::handleDisplayRequest(uint32_t request) {
+    HwcDisplayPipeMgr::getInstance().update(request);
+    return 0;
+}
 
 /**********************Internal Implement********************/
 
-class MesonHwc2Observer : public Hwc2DisplayObserver {
+class MesonHwc2Observer
+    : public Hwc2DisplayObserver, public HwcVsyncObserver{
 public:
     MesonHwc2Observer(hwc2_display_t display, MesonHwc2 * hwc) {
         mDispId = display;
@@ -522,6 +628,7 @@ MesonHwc2::MesonHwc2() {
     mRefreshData = NULL;
     mVsyncFn = NULL;
     mVsyncData = NULL;
+    mDisplayRequests = 0;
     initialize();
 }
 
@@ -563,30 +670,17 @@ void MesonHwc2::onHotplug(hwc2_display_t display, bool connected) {
 }
 
 int32_t MesonHwc2::initialize() {
-    uint32_t hwNum, hwcIdx;
-    hw_display_id hwId;
-
-    if (HwDisplayManager::getInstance().getHwDisplayIds(&hwNum, NULL) != 0)
-        return HWC2_ERROR_NO_RESOURCES;
-
-    hw_display_id * hwIds = new hw_display_id[hwNum];
-    if (HwDisplayManager::getInstance().getHwDisplayIds(&hwNum, hwIds) != 0)
-        return HWC2_ERROR_NO_RESOURCES;
-
-    /*TODO: how to confirm which hw display is primary display? */
-    if (hwNum > HWC_NUM_PHYSICAL_DISPLAY_TYPES)
-        hwNum = HWC_NUM_PHYSICAL_DISPLAY_TYPES;
-
-    for (hwcIdx = 0; hwcIdx < hwNum; ++hwcIdx) {
-        std::shared_ptr<Hwc2DisplayObserver> displayObserver =
-                std::make_shared<MesonHwc2Observer>(hwcIdx, this);
-        hwId = hwIds[hwcIdx];
-
-        std::shared_ptr<Hwc2Display> disp =
-            std::make_shared<Hwc2Display>(hwId, displayObserver);
+    for (uint32_t i = 0; i < HwcConfig::getDisplayNum(); i ++) {
+        /*create hwc2display*/
+        auto displayObserver = std::make_shared<MesonHwc2Observer>(i, this);
+        auto disp = std::make_shared<Hwc2Display>(displayObserver);
         disp->initialize();
-        mDisplays.emplace(hwcIdx, disp);
+        mDisplays.emplace(i, disp);
+        auto baseDisp = std::dynamic_pointer_cast<HwcDisplay>(disp);
+        HwcDisplayPipeMgr::getInstance().setHwcDisplay(i, baseDisp);
     }
+
+    HwcDisplayPipeMgr::getInstance().initDisplays();
 
     return HWC2_ERROR_NONE;
 }

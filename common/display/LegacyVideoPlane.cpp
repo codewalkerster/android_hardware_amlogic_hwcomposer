@@ -11,18 +11,17 @@
 #include "AmFramebuffer.h"
 
 #include <misc.h>
-#include <sys/ioctl.h>
-#include <tvp/OmxUtil.h>
+#include <OmxUtil.h>
 #include <MesonLog.h>
-#include <gralloc_priv.h>
+
+#include <sys/ioctl.h>
 #include <math.h>
 
 
 //#define AMVIDEO_DEBUG
 
 LegacyVideoPlane::LegacyVideoPlane(int32_t drvFd, uint32_t id)
-    : HwDisplayPlane(drvFd, id),
-    mNeedUpdateAxis(false) {
+    : HwDisplayPlane(drvFd, id) {
     snprintf(mName, 64, "AmVideo-%d", id);
 
     if (getMute(mPlaneMute) != 0) {
@@ -33,6 +32,7 @@ LegacyVideoPlane::LegacyVideoPlane(int32_t drvFd, uint32_t id)
     mOmxKeepLastFrame = 0;
     mVideoType = DRM_FB_UNDEFINED;
     mLegacyVideoFb.reset();
+    memset(&mBackupDisplayFrame, 0, sizeof(drm_rect_t));
     getOmxKeepLastFrame(mOmxKeepLastFrame);
 }
 
@@ -58,7 +58,7 @@ int32_t LegacyVideoPlane::getFixedZorder() {
 }
 
 uint32_t LegacyVideoPlane::getPossibleCrtcs() {
-    return 1 << 0;
+    return CRTC_VOUT1;
 }
 
 bool LegacyVideoPlane::isFbSupport(std::shared_ptr<DrmFramebuffer> & fb) {
@@ -74,14 +74,7 @@ bool LegacyVideoPlane::shouldUpdateAxis(
     std::shared_ptr<DrmFramebuffer> &fb) {
     bool bUpdate = false;
 
-    // TODO: we need to update video axis while mode or freescale state is changed.
-    if (mNeedUpdateAxis) {
-        mNeedUpdateAxis = false;
-        bUpdate = true;
-    }
-
     drm_rect_t *displayFrame = &(fb->mDisplayFrame);
-
     if (memcmp(&mBackupDisplayFrame, displayFrame, sizeof(drm_rect_t))) {
         memcpy(&mBackupDisplayFrame, displayFrame, sizeof(drm_rect_t));
         bUpdate = true;
@@ -107,10 +100,22 @@ int32_t LegacyVideoPlane::setPlane(
         mLegacyVideoFb = fb;
         mVideoType = mLegacyVideoFb->mFbType;
 
-        buffer_handle_t buf = fb->mBufferHandle;
+        native_handle_t * buf = fb->mBufferHandle;
+#if 0
+        /*set video crop:echo top left bottom right > /sys/class/video/crop*/
+        if (mVideoType == DRM_FB_VIDEO_OMX_PTS) {
+            char videoCropStr[AXIS_STR_LEN] = {0};
+            sprintf(videoCropStr, "%d %d %d %d",
+                fb->mSourceCrop.top, fb->mSourceCrop.left,
+                am_gralloc_get_height(buf) - fb->mSourceCrop.bottom,
+                am_gralloc_get_width(buf) - fb->mSourceCrop.right);
+            sysfs_set_string(SYSFS_VIDEO_CROP, videoCropStr);
+        }
+#endif
+
         /*set video axis.*/
         if (shouldUpdateAxis(fb)) {
-            char videoAxisStr[MAX_STR_LEN] = {0};
+            char videoAxisStr[AXIS_STR_LEN] = {0};
             drm_rect_t * videoAxis = &(fb->mDisplayFrame);
             sprintf(videoAxisStr, "%d %d %d %d", videoAxis->left, videoAxis->top,
                 videoAxis->right - 1, videoAxis->bottom - 1);
@@ -119,21 +124,16 @@ int32_t LegacyVideoPlane::setPlane(
 
         /*set omx pts.*/
         if (am_gralloc_is_omx_metadata_buffer(buf)) {
-            private_handle_t const* buffer = private_handle_t::dynamicCast(buf);
-
-            char *base = (char*)mmap(
-                NULL, buffer->size, PROT_READ|PROT_WRITE,
-                MAP_SHARED, buffer->share_fd, 0);
-
-            if (base != MAP_FAILED) {
+            char *base = NULL;
+            if (0 == gralloc_lock_dma_buf(buf, (void **)&base)) {
                 set_omx_pts(base, &mDrvFd);
-                setZorder(zorder);
-                munmap(base, buffer->size);
-                MESON_LOGV("set omx pts ok.");
+                gralloc_unlock_dma_buf(buf);
             } else {
                 MESON_LOGE("set omx pts failed.");
             }
         }
+
+        setZorder(zorder);
     }
 
     /*Update video plane blank status.*/
@@ -178,6 +178,7 @@ int32_t LegacyVideoPlane::setPlane(
 
     if (blankOp == BLANK_FOR_NO_CONTENT) {
         mVideoType = DRM_FB_UNDEFINED;
+        memset(&mBackupDisplayFrame, 0, sizeof(drm_rect_t));
         mLegacyVideoFb.reset();
     }
 

@@ -97,6 +97,8 @@ int MultiplanesComposition::handleVideoComposition() {
             MESON_COMPOSITION_PLANE_AMVIDEO},
         {DRM_FB_VIDEO_SIDEBAND, LEGACY_VIDEO_PLANE,
             MESON_COMPOSITION_PLANE_AMVIDEO_SIDEBAND},
+        {DRM_FB_VIDEO_SIDEBAND_SECOND, LEGACY_EXT_VIDEO_PLANE,
+            MESON_COMPOSITION_PLANE_AMVIDEO_SIDEBAND},
         {DRM_FB_VIDEO_OMX_PTS_SECOND, LEGACY_EXT_VIDEO_PLANE,
             MESON_COMPOSITION_PLANE_AMVIDEO},
         {DRM_FB_VIDEO_OMX_V4L, HWC_VIDEO_PLANE,
@@ -258,8 +260,8 @@ int MultiplanesComposition::pickoutOsdFbs() {
         if (legacyVideoFb->mZorder > minOsdFbZorder) {
             mMinComposerZorder = mFramebuffers.begin()->second->mZorder;
             /* Legacy video is always on the bottom.
-             * SO, all fbs below leagcyVideo zorder need to compose.
-             * Set maxClientZorder = leagcyVideoZorder
+             * SO, all fbs below legacyVideo zorder need to compose.
+             * Set maxClientZorder = legacyVideoZorder
              */
             if (mMaxComposerZorder == INVALID_ZORDER || legacyVideoFb->mZorder > mMaxComposerZorder) {
                 mMaxComposerZorder = legacyVideoFb->mZorder;
@@ -432,7 +434,7 @@ int32_t compareFbScale(
     else if (widthCompare > 0 && heighCompare > 0)
         return 1;
     else {
-        MESON_LOGE("compareFbScale failed %d ,%d, %d, %d",
+        MESON_LOGW("compareFbScale failed %d ,%d, %d, %d",
             widthCompare, heighCompare,
             bDisplayWidth, bDisplayHeight);
         return -1;
@@ -937,15 +939,21 @@ int MultiplanesComposition::decideComposition() {
     } else {
         handleOsdCompostionWithVideo();
     }
+
+    /* record overlayFbs and start to compose */
+    if (mComposer.get()) {
+        mComposer->prepare();
+        mComposer->addInputs(mComposerFbs, mOverlayFbs);
+    }
+
     return ret;
 }
 
 /* Commit DisplayPair to display. */
 int MultiplanesComposition::commit() {
-    /* Start compose, and replace composer output with din0 Pair. */
+    /* replace composer output with din0 Pair. */
     std::shared_ptr<DrmFramebuffer> composerOutput;
     if (mComposer.get()) {
-        mComposer->addInputs(mComposerFbs, mOverlayFbs);
         mComposer->start();
         composerOutput = mComposer->getOutput();
     }
@@ -1010,9 +1018,13 @@ int MultiplanesComposition::commit() {
 
     if (mDisplayRefFb.get()) {
         if (IS_FB_COMPOSED(mDisplayRefFb)) {
-            mDisplayRefFb = composerOutput;
-            mOsdDisplayFrame.crtc_display_x = composerOutput->mDisplayFrame.left;
-            mOsdDisplayFrame.crtc_display_y = composerOutput->mDisplayFrame.top;
+            if (composerOutput.get()) {
+                mDisplayRefFb = composerOutput;
+            } else {
+                MESON_LOGE("Output of cient composer is NULL!");
+            }
+            mOsdDisplayFrame.crtc_display_x = mDisplayRefFb->mDisplayFrame.left;
+            mOsdDisplayFrame.crtc_display_y = mDisplayRefFb->mDisplayFrame.top;
         }
 
         mOsdDisplayFrame.framebuffer_w = mDisplayRefFb->mSourceCrop.right -

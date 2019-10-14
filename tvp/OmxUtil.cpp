@@ -76,7 +76,7 @@ int setomxpts(int time_video) {
 
 int setomxpts(uint32_t* omx_info,bool use_videosync) {
     if (use_videosync) {
-        return ioctl(videosync_handle, VIDEOSYNC_IOC_SET_OMX_VPTS, (unsigned int)omx_info);
+        return ioctl(videosync_handle, VIDEOSYNC_IOC_SET_OMX_VPTS, (unsigned long)omx_info);
     } else {
         return ioctl(amvideo_handle, AMSTREAM_IOC_SET_OMX_VPTS, (unsigned long)omx_info);
     }
@@ -126,6 +126,7 @@ void set_omx_pts(char* data, int* handle) {
                     offset += sizeof(uint32_t);
                     if (omx_version >= 3) {
                         memcpy(&session, (char*)data+offset, sizeof(uint32_t));
+                        offset += sizeof(uint32_t);
                     }
                 }
                 if (strncmp(data+offset, TVP_SECRET_DEV_ID, strlen(TVP_SECRET_DEV_ID)) == 0) {
@@ -161,10 +162,10 @@ void set_omx_pts(char* data, int* handle) {
     }
 }
 
-int set_hdr_info(vframe_master_display_colour_s_t & vf_hdr) {
+int set_hdr_info(vframe_master_display_colour_s_t * vf_hdr) {
     if (amvideo_handle == -1) {
         openamvideo();
     }
-    return ioctl(amvideo_handle, AMSTREAM_IOC_SET_HDR_INFO, (unsigned long)&vf_hdr);
+    return ioctl(amvideo_handle, AMSTREAM_IOC_SET_HDR_INFO, (unsigned long)vf_hdr);
 }
 
