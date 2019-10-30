@@ -116,13 +116,22 @@ ifeq ($(PRODUCT_BRAND), ODROID)
 LOCAL_CFLAGS += -DODROID
 endif
 
+ifeq ($(HWC_DYNAMIC_SWITCH_CONNECTOR), true)
+LOCAL_CFLAGS += -DHWC_DYNAMIC_SWITCH_CONNECTOR
+endif
+ifeq ($(HWC_DYNAMIC_SWITCH_VIU), true)
+LOCAL_CFLAGS += -DHWC_DYNAMIC_SWITCH_VIU
+endif
 #*********************************HWC CONFIGS END************************
 
 LOCAL_SRC_FILES := \
     HwcVsync.cpp \
     HwcConfig.cpp \
-    HwcDisplayPipeMgr.cpp \
-    HwcPowerMode.cpp
+    HwcPowerMode.cpp \
+    HwcDisplayPipe.cpp \
+    FixedDisplayPipe.cpp \
+    LoopbackDisplayPipe.cpp \
+    DualDisplayPipe.cpp
 
 LOCAL_C_INCLUDES := \
     hardware/libhardware/include \

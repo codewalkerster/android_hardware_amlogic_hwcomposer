@@ -17,7 +17,7 @@
 #include <DebugHelper.h>
 #include <HwcConfig.h>
 #include <HwcVsync.h>
-#include <HwcDisplayPipeMgr.h>
+#include <HwcDisplayPipe.h>
 #include <misc.h>
 #include <systemcontrol.h>
 
@@ -130,7 +130,7 @@ int32_t MesonHwc2::registerCallback(int32_t descriptor,
         */
             if (mHotplugFn) {
                 mHotplugFn(mHotplugData, HWC_DISPLAY_PRIMARY, true);
-                if (HwcConfig::enableExtendDisplay() == true) {
+                if (HwcConfig::getDisplayNum() > 1) {
                     mHotplugFn(mHotplugData, HWC_DISPLAY_EXTERNAL, true);
                 }
             }
@@ -513,7 +513,7 @@ int32_t MesonHwc2::setCalibrateInfo(hwc2_display_t display){
     static int cali[4];
     drm_mode_info_t mDispMode;
     hwcDisplay->getDispMode(mDispMode);
-    if (HwcConfig::getPipeline() == HWC_PIPE_VIU1VDINVIU2) {
+    if (HwcConfig::getPipeline() == HWC_PIPE_LOOPBACK) {
         caliX = 1;
         caliY = 1;
         caliW = mDispMode.pixelW - 2;
@@ -546,7 +546,7 @@ int32_t MesonHwc2::setCalibrateInfo(hwc2_display_t display){
 uint32_t MesonHwc2::getDisplayRequest() {
     /*read extend prop to update display request.*/
 #ifdef GET_REQUEST_FROM_PROP
-    if (HwcConfig::getPipeline() == HWC_PIPE_VIU1VDINVIU2) {
+    if (HwcConfig::getPipeline() == HWC_PIPE_LOOPBACK) {
         static bool b3dMode = false;
         static bool bKeystone = false;
         char val[PROP_VALUE_LEN_MAX];
@@ -585,7 +585,7 @@ uint32_t MesonHwc2::getDisplayRequest() {
 }
 
 int32_t MesonHwc2::handleDisplayRequest(uint32_t request) {
-    HwcDisplayPipeMgr::getInstance().update(request);
+    mDisplayPipe->handleRequest(request);
     return 0;
 }
 
@@ -670,6 +670,9 @@ void MesonHwc2::onHotplug(hwc2_display_t display, bool connected) {
 }
 
 int32_t MesonHwc2::initialize() {
+    std::map<uint32_t, std::shared_ptr<HwcDisplay>> mhwcDisps;
+    mDisplayPipe = createDisplayPipe(HwcConfig::getPipeline());
+
     for (uint32_t i = 0; i < HwcConfig::getDisplayNum(); i ++) {
         /*create hwc2display*/
         auto displayObserver = std::make_shared<MesonHwc2Observer>(i, this);
@@ -677,11 +680,10 @@ int32_t MesonHwc2::initialize() {
         disp->initialize();
         mDisplays.emplace(i, disp);
         auto baseDisp = std::dynamic_pointer_cast<HwcDisplay>(disp);
-        HwcDisplayPipeMgr::getInstance().setHwcDisplay(i, baseDisp);
+        mhwcDisps.emplace(i, baseDisp);
     }
 
-    HwcDisplayPipeMgr::getInstance().initDisplays();
-
+    mDisplayPipe->init(mhwcDisps);
     return HWC2_ERROR_NONE;
 }
 
