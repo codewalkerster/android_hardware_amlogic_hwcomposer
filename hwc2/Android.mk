@@ -46,6 +46,7 @@ LOCAL_SRC_FILES := \
     HwcModeMgr.cpp \
     FixedSizeModeMgr.cpp \
     VariableModeMgr.cpp \
+    ActiveModeMgr.cpp \
     MesonHwc2.cpp
 
 LOCAL_C_INCLUDES := \
