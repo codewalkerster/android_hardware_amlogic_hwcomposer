@@ -68,10 +68,11 @@ int32_t HwcDisplayPipe::init(std::map<uint32_t, std::shared_ptr<HwcDisplay>> & h
             fbW = calibrateCoordinates[2];
             fbH = calibrateCoordinates[3];
         }
-        if (fbW >= 3840)
+        /* limit fb size to 1920x1080 in case of higher resolution than 2560x1080 */
+        if ((fbW >= 2560) && (fbH > 1080)) {
             fbW = 1920;
-        if (fbH >= 2160)
             fbH = 1080;
+	}
 #else
         HwcConfig::getFramebufferSize (hwcId, fbW, fbH);
 #endif
