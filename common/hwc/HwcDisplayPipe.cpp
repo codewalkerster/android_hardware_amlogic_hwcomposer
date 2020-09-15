@@ -72,10 +72,27 @@ int32_t HwcDisplayPipe::init(std::map<uint32_t, std::shared_ptr<HwcDisplay>> & h
             fbH = calibrateCoordinates[3];
         }
         /* limit fb size to 1920x1080 in case of higher resolution than 2560x1080 */
-        if ((fbW >= 2560) && (fbH > 1080)) {
+        if ((fbW == fbH) && (fbW >= 1280)) {
+            // 1:1 aspect ration
+            fbW = 1200;
+            fbH = 1200;
+        } else if ((fbW == 2560) && (fbH == 1440)) {
+            //16:9 aspect ratio
+            fbW = 2048;
+            fbH = 1152;
+        } else if ((fbW == 2560) && (fbH == 1600)) {
+            //16:10 aspect ratio
+            fbW = 1920;
+            fbH = 1200;
+        } else if ((fbW == 3440) && (fbH == 1440)) {
+            //21:9 aspect ration
+            fbW = 2560;
+            fbH = 1080;
+        } else if ((fbW > 3440) && (fbH > 1440)) {
+            //4k
             fbW = 1920;
             fbH = 1080;
-	}
+        }
 #else
         HwcConfig::getFramebufferSize (hwcId, fbW, fbH);
 #endif
