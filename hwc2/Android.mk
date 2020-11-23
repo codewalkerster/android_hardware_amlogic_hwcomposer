@@ -37,6 +37,9 @@ endif
 ifeq ($(PRODUCT_BRAND), ODROID)
 LOCAL_CFLAGS += -DODROID
 endif
+ifeq ($(HWC_SUPPORT_MODES_LIST), true)
+LOCAL_CFLAGS += -DHWC_SUPPORT_MODES_LIST
+endif
 
 LOCAL_SRC_FILES := \
     Hwc2Base.cpp \
@@ -47,6 +50,7 @@ LOCAL_SRC_FILES := \
     FixedSizeModeMgr.cpp \
     VariableModeMgr.cpp \
     ActiveModeMgr.cpp \
+    RealModeMgr.cpp \
     MesonHwc2.cpp
 
 LOCAL_C_INCLUDES := \
