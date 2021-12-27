@@ -17,6 +17,8 @@
 
 #include <HwDisplayManager.h>
 
+#include <cutils/properties.h>
+
 #define HWC_BOOTED_PROP "vendor.sys.hwc.booted"
 
 HwcDisplayPipe::PipeStat::PipeStat(uint32_t id) {
@@ -89,9 +91,13 @@ int32_t HwcDisplayPipe::init(std::map<uint32_t, std::shared_ptr<HwcDisplay>> & h
             fbW = 2560;
             fbH = 1080;
         } else if ((fbW == 3840) && (fbH == 1080)) {
-            //32:9 aspect ration
-            fbW = 1920;
-            fbH = 540;
+            char value[PROPERTY_VALUE_MAX] = {0};
+            property_get("ro.product.name", value, "odroidn2");
+            if (strcmp(value, "odroidn2") == 0) {
+                //32:9 aspect ration
+                fbW = 1920;
+                fbH = 540;
+            }
         } else if ((fbW > 3440) && (fbH > 1440)) {
             //4k
             fbW = 1920;
