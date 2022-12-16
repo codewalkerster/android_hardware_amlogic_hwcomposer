@@ -93,7 +93,7 @@ int32_t HwcDisplayPipe::init(std::map<uint32_t, std::shared_ptr<HwcDisplay>> & h
         } else if ((fbW == 3840) && (fbH == 1080)) {
             char value[PROPERTY_VALUE_MAX] = {0};
             property_get("ro.product.name", value, "odroidn2");
-            if (strcmp(value, "odroidn2") == 0) {
+            if (strcmp(value, "odroidn2") == 0 || strcmp(value, "odroidn2l") == 0) {
                 //32:9 aspect ration
                 fbW = 1920;
                 fbH = 540;
