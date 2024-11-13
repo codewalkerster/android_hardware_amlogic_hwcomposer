@@ -80,12 +80,12 @@ int32_t HwcDisplayPipe::init(std::map<uint32_t, std::shared_ptr<HwcDisplay>> & h
             fbH = 1200;
         } else if ((fbW == 2560) && (fbH == 1440)) {
             //16:9 aspect ratio
-            fbW = 2048;
-            fbH = 1152;
+            fbW = 1920;
+            fbH = 1080;
         } else if ((fbW == 2560) && (fbH == 1600)) {
             //16:10 aspect ratio
-            fbW = 1920;
-            fbH = 1200;
+            fbW = 1724;
+            fbH = 1080;
         } else if ((fbW == 3440) && (fbH == 1440)) {
             //21:9 aspect ration
             fbW = 2560;
