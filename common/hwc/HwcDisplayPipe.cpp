@@ -73,26 +73,42 @@ int32_t HwcDisplayPipe::init(std::map<uint32_t, std::shared_ptr<HwcDisplay>> & h
             fbW = calibrateCoordinates[2];
             fbH = calibrateCoordinates[3];
         }
-        /* limit fb size to 1920x1080 in case of higher resolution than 2560x1080 */
+
+        char value[PROPERTY_VALUE_MAX] = {0};
+            property_get("ro.product.name", value, "odroidn2");
+
         if ((fbW == fbH) && (fbW >= 1280)) {
             // 1:1 aspect ration
-            fbW = 1200;
-            fbH = 1200;
+            if (strcmp(value, "odroidn2") == 0 || strcmp(value, "odroidn2l") == 0) {
+                fbW = 1200;
+                fbH = 1200;
+            } else {
+                fbW = 1080;
+                fbH = 1080;
+            }
         } else if ((fbW == 2560) && (fbH == 1440)) {
             //16:9 aspect ratio
-            fbW = 1920;
-            fbH = 1080;
+            if (strcmp(value, "odroidn2") == 0 || strcmp(value, "odroidn2l") == 0) {
+                fbW = 2048;
+                fbH = 1152;
+            } else {
+                fbW = 1920;
+                fbH = 1080;
+            }
         } else if ((fbW == 2560) && (fbH == 1600)) {
             //16:10 aspect ratio
-            fbW = 1724;
-            fbH = 1080;
+            if (strcmp(value, "odroidn2") == 0 || strcmp(value, "odroidn2l") == 0) {
+                fbW = 1920;
+                fbH = 1200;
+            } else {
+                fbW = 1724;
+                fbH = 1080;
+            }
         } else if ((fbW == 3440) && (fbH == 1440)) {
             //21:9 aspect ration
             fbW = 2560;
             fbH = 1080;
         } else if ((fbW == 3840) && (fbH == 1080)) {
-            char value[PROPERTY_VALUE_MAX] = {0};
-            property_get("ro.product.name", value, "odroidn2");
             if (strcmp(value, "odroidn2") == 0 || strcmp(value, "odroidn2l") == 0) {
                 //32:9 aspect ration
                 fbW = 1920;
